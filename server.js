@@ -268,7 +268,7 @@ app.post("/api/generate", async (req, res) => {
 
     const wordList = selectedVocab.map(w => w.character).join("、");
     const storyContext = context
-      ? `The story so far:\n${context}\n\nContinue from where it left off — resolve the cliffhanger, then end on a new one.`
+      ? `The story so far:\n${context}\n\nContinue from where it left off — resolve the situation, then end at a new moment of tension. Complete every sentence fully; no ellipses.`
       : `Story theme: ${userPrompt}`;
 
     const systemPrompt = [
@@ -305,7 +305,7 @@ app.post("/api/generate", async (req, res) => {
       `- If any content word is not in the provided vocabulary list, rewrite that part.`,
       `- Repeat until the story contains no out-of-list content words.`,
       ``,
-      `Output only the Japanese story. End on a cliffhanger — the last sentence should leave something unresolved, a decision unmade, or a moment of suspense that makes the reader want to find out what happens next.`,
+      `Output only the Japanese story. End the segment at a moment of genuine narrative tension — complete your final sentence, but leave the situation unresolved in a way that makes the next development feel inevitable. Do not use ellipses or trailing off; the sentence should be whole.`,
     ].join("\n");
 
 
