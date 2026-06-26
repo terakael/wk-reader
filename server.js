@@ -268,7 +268,7 @@ app.post("/api/generate", async (req, res) => {
 
     const wordList = selectedVocab.map(w => w.character).join("、");
     const storyContext = context
-      ? `The story so far:\n${context}\n\nContinue naturally from where it left off.`
+      ? `The story so far:\n${context}\n\nContinue from where it left off — resolve the cliffhanger, then end on a new one.`
       : `Story theme: ${userPrompt}`;
 
     const systemPrompt = [
@@ -305,7 +305,7 @@ app.post("/api/generate", async (req, res) => {
       `- If any content word is not in the provided vocabulary list, rewrite that part.`,
       `- Repeat until the story contains no out-of-list content words.`,
       ``,
-      `Output only the Japanese story.`,
+      `Output only the Japanese story. End on a cliffhanger — the last sentence should leave something unresolved, a decision unmade, or a moment of suspense that makes the reader want to find out what happens next.`,
     ].join("\n");
 
 
