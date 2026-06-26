@@ -145,23 +145,16 @@ app.post("/api/generate", async (req, res) => {
   try {
     send("status", "Finding vocabulary...");
 
-    const pool   = embIndex.items.slice(0, embIndex.maxRowByLevel[vocabLevel] ?? embIndex.meta.count);
-    const sample = pool
-      .slice().sort(() => Math.random() - 0.5).slice(0, 20)
-      .map(w => `${w.character}(${w.primary_meaning})`).join(", ");
-
-    const expanded = await enhanceAdapter.generate(
-      "You help generate Japanese story prompts for vocabulary learners. " +
-      "Given a story theme and a sample of vocabulary available at the learner's level, " +
-      "expand the theme into 2–3 sentences of vivid scene description. " +
-      "Find a creative angle on the theme that naturally connects to the available vocabulary words. " +
-      "Focus on concrete nouns, actions, emotions, and setting. " +
-      "Reply with only the expanded description, no preamble.",
-      `Theme: ${userPrompt}\n\nAvailable vocabulary sample: ${sample}`,
+    const retrievalQuery = await enhanceAdapter.generate(
+      "You help retrieve relevant Japanese vocabulary for a story prompt. " +
+      "Given a story prompt, list the key themes, objects, places, actions, emotions, and relationships in the story — not as a scene description, but as a flat, diverse set of concepts that would help retrieve relevant vocabulary words. " +
+      "Include both the obvious elements and subtler ones (e.g. mood, time of day, character relationships). " +
+      "Output only the list, no preamble, no explanation.",
+      `Story prompt: ${userPrompt}`,
       { thinkingConfig: { thinkingBudget: 0 } }
     ).catch(() => userPrompt);
 
-    const queryVec      = await embedAdapter.embed(expanded);
+    const queryVec      = await embedAdapter.embed(retrievalQuery);
     const selectedVocab = retrieveVocab(queryVec, vocabLevel);
     send("words", selectedVocab.map(w => w.character));
 
