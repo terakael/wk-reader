@@ -1,0 +1,15 @@
+{
+  "port": 3000,
+  "embedding": {
+    "url": "https://api.openai.com/v1/embeddings",
+    "apiKeyCmd": "security find-generic-password -a api-keys -s openai -w",
+    "model": "text-embedding-3-small"
+  },
+  "gemini": {
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/models",
+    "apiKeyCmd": "security find-generic-password -a api-keys -s google -w",
+    "authHeader": "x-goog-api-key",
+    "enhanceModel": "gemini-2.5-flash",
+    "storyModel": "gemini-3.5-flash"
+  }
+}

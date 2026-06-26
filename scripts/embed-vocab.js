@@ -5,18 +5,36 @@
  *   vocab_embeddings_index.json   — metadata, per-item index, maxRowByLevel lookup
  *
  * Usage:
- *   AI_API_KEY=... node scripts/embed-vocab.js
+ *   node scripts/embed-vocab.js
+ *
+ * Reads embedding.url, embedding.model, and embedding.apiKey / embedding.apiKeyCmd from config.json.
  */
 
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { execSync } from "child_process";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 
-const API_URL = `${process.env.AI_BASE_URL || "https://api.ai.public.rakuten-it.com"}/openai/v1/embeddings`;
-const MODEL = "text-embedding-3-small";
+const configPath = join(ROOT, "config.json");
+if (!existsSync(configPath)) {
+  console.error("config.json not found. Copy config.example.json and fill in your values.");
+  process.exit(1);
+}
+const cfg = JSON.parse(readFileSync(configPath, "utf8"));
+
+function resolve(section, field) {
+  const cmdKey = `${field}Cmd`;
+  if (section[cmdKey]) return execSync(section[cmdKey], { encoding: "utf8" }).trim();
+  if (section[field])  return section[field];
+  throw new Error(`config.json: missing "${field}" or "${cmdKey}"`);
+}
+
+const API_URL = cfg.embedding.url;
+const MODEL   = cfg.embedding.model || "text-embedding-3-small";
+const apiKey  = resolve(cfg.embedding, "apiKey");
 const DIMENSIONS = 1536;
 const BATCH_SIZE = 100;
 const RETRY_LIMIT = 3;
@@ -54,11 +72,6 @@ function embeddingText(item) {
 
 // ── Embed helpers ─────────────────────────────────────────────────────────────
 
-const apiKey = process.env.AI_API_KEY;
-if (!apiKey) {
-  console.error("AI_API_KEY not set.");
-  process.exit(1);
-}
 
 async function embedBatch(texts, attempt = 1) {
   const res = await fetch(API_URL, {

@@ -1,5 +1,6 @@
 import express from "express";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
+import { execSync } from "child_process";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import kuromoji from "kuromoji";
@@ -8,12 +9,33 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const PORT         = process.env.PORT || 3000;
-const AI_API_KEY  = process.env.AI_API_KEY;
-const AI_BASE_URL  = process.env.AI_BASE_URL || "https://api.ai.public.rakuten-it.com";
-const EMBED_URL    = `${AI_BASE_URL}/openai/v1/embeddings`;
-const GEMINI_BASE  = `${AI_BASE_URL}/google-vertexai/v1/publishers/google/models`;
-const EMBED_DIM    = 1536;
+const configPath = join(__dirname, "config.json");
+if (!existsSync(configPath)) {
+  console.error("config.json not found. Copy config.example.json and fill in your values.");
+  process.exit(1);
+}
+const cfg = JSON.parse(readFileSync(configPath, "utf8"));
+
+// Resolve a field that may be a plain value or a shell command.
+// { apiKey: "literal" }    → returns "literal"
+// { apiKeyCmd: "cmd" }     → executes cmd, returns trimmed stdout
+function resolve(section, field) {
+  const cmdKey = `${field}Cmd`;
+  if (section[cmdKey]) return execSync(section[cmdKey], { encoding: "utf8" }).trim();
+  if (section[field])  return section[field];
+  throw new Error(`config.json: missing "${field}" or "${cmdKey}" in ${JSON.stringify(section)}`);
+}
+
+const PORT          = cfg.port || process.env.PORT || 3000;
+const EMBED_URL     = cfg.embedding.url;
+const EMBED_MODEL   = cfg.embedding.model || "text-embedding-3-small";
+const EMBED_KEY     = resolve(cfg.embedding, "apiKey");
+const GEMINI_BASE   = cfg.gemini.baseUrl;
+const GEMINI_KEY    = resolve(cfg.gemini, "apiKey");
+const GEMINI_AUTH   = cfg.gemini.authHeader || "Authorization";
+const ENHANCE_MODEL = cfg.gemini.enhanceModel || ENHANCE_MODEL;
+const STORY_MODEL   = cfg.gemini.storyModel   || STORY_MODEL;
+const EMBED_DIM     = 1536;
 
 // ── Startup data ──────────────────────────────────────────────────────────────
 
@@ -36,7 +58,7 @@ console.log("Ready.");
 async function geminiOnce(model, system, user, extraConfig = {}) {
   const res = await fetch(`${GEMINI_BASE}/${model}:generateContent`, {
     method: "POST",
-    headers: { Authorization: AI_API_KEY, "Content-Type": "application/json" },
+    headers: { [GEMINI_AUTH]: GEMINI_KEY, "Content-Type": "application/json" },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
@@ -52,7 +74,7 @@ async function geminiOnce(model, system, user, extraConfig = {}) {
 async function geminiStream(model, system, user, extraConfig = {}, onChunk) {
   const res = await fetch(`${GEMINI_BASE}/${model}:streamGenerateContent?alt=sse`, {
     method: "POST",
-    headers: { Authorization: AI_API_KEY, "Content-Type": "application/json" },
+    headers: { [GEMINI_AUTH]: GEMINI_KEY, "Content-Type": "application/json" },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
@@ -96,8 +118,8 @@ function l2normalize(arr) {
 async function embed(text) {
   const res = await fetch(EMBED_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${AI_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ input: text, model: "text-embedding-3-small" }),
+    headers: { Authorization: `Bearer ${EMBED_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ input: text, model: EMBED_MODEL }),
   });
   if (!res.ok) throw new Error(`Embed ${res.status}: ${await res.text()}`);
   const json = await res.json();
@@ -187,7 +209,7 @@ app.get("/api/placeholder", async (req, res) => {
 
   try {
     const prompt = await geminiOnce(
-      "gemini-2.5-flash",
+      ENHANCE_MODEL,
       "You generate one-sentence story prompt ideas for Japanese reading practice. " +
       "Given a few Japanese vocabulary words, write a single natural English sentence describing a story scenario that could feature them. " +
       "Be specific and vivid — name a character type, a setting, or a situation. " +
@@ -222,7 +244,7 @@ app.post("/api/generate", async (req, res) => {
     const [, expanded] = await Promise.all([
       embed(userPrompt),
       geminiOnce(
-        "gemini-2.5-flash",
+        ENHANCE_MODEL,
         "Expand the user's story prompt into 2–3 sentences of vivid scene description. " +
         "Focus on concrete nouns, actions, emotions, and setting. " +
         "Reply with only the expanded description, no preamble.",
@@ -283,7 +305,7 @@ app.post("/api/generate", async (req, res) => {
 
     let raw = "";
     await geminiStream(
-      "gemini-3.5-flash",
+      STORY_MODEL,
       systemPrompt,
       `Known vocabulary list:\n${wordList}\n\n${storyContext}`,
       { thinkingConfig: { thinkingBudget: 0 } },

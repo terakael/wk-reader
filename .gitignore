@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Config (contains API keys)
+config.json
+
 # Embedding artifacts — large binary, hosted separately
 vocab_embeddings.bin
 vocab_embeddings_index.json
