@@ -238,15 +238,25 @@ app.post("/api/generate", async (req, res) => {
   try {
     send("status", "Finding vocabulary...");
 
-    // Enhance the prompt — expand into vivid scene description for better embedding
+    // Sample words from the available vocab pool to ground the enhancement
+    const pool      = embIndex.items.slice(0, embIndex.maxRowByLevel[vocabLevel] ?? embIndex.meta.count);
+    const sample    = pool
+      .slice().sort(() => Math.random() - 0.5).slice(0, 20)
+      .map(w => `${w.character}(${w.primary_meaning})`).join(", ");
+
+    // Enhance the prompt — find a narrative angle expressible with the available vocabulary
     const expanded = await geminiOnce(
       ENHANCE_MODEL,
-      "Expand the user's story prompt into 2\u20133 sentences of vivid scene description. " +
+      "You help generate Japanese story prompts for vocabulary learners. " +
+      "Given a story theme and a sample of vocabulary available at the learner's level, " +
+      "expand the theme into 2\u20133 sentences of vivid scene description. " +
+      "Find a creative angle on the theme that naturally connects to the available vocabulary words. " +
       "Focus on concrete nouns, actions, emotions, and setting. " +
       "Reply with only the expanded description, no preamble.",
-      userPrompt,
+      `Theme: ${userPrompt}\n\nAvailable vocabulary sample: ${sample}`,
       { thinkingConfig: { thinkingBudget: 0 } }
     ).catch(() => userPrompt);
+
 
     // Re-embed the grounded description → final vocab retrieval
     const queryVec      = await embed(expanded);
