@@ -25,7 +25,7 @@ Every content word in the story comes from your known WaniKani vocabulary. Click
 ### Requirements
 
 - Node.js 22+
-- An OpenAI-compatible API key with access to `text-embedding-3-small`, `gemini-2.5-flash`, and `gemini-3.5-flash` (`AI_API_KEY`)
+- API keys for your chosen embedding and generation providers (see config below)
 - The pre-built embedding files (see below)
 
 ### Install
@@ -44,11 +44,29 @@ Copy the example config and fill in your values:
 cp config.example.json config.json
 ```
 
-Edit `config.json` with your API endpoints and keys. Each `apiKey` field also accepts an `apiKeyCmd` sibling — a shell command whose stdout is used as the key:
+Edit `config.json`. The config has two sections:
+
+**`providers`** — named connection definitions. Each has a `type` (`openai` or `gemini`), a `baseUrl`, and credentials. Credentials can be a literal `apiKey` or an `apiKeyCmd` shell command whose stdout is used as the key:
 
 ```json
 "apiKeyCmd": "security find-generic-password -a api-keys -s openai -w"
 ```
+
+For `gemini` providers, the default auth header is `x-goog-api-key`. Override with `"authHeader": "Authorization"` if your endpoint expects a Bearer token instead.
+
+**`tasks`** — one entry each for `embedding`, `enhance`, and `story`. Each references a provider by name and specifies the model. The `embedding` task also requires `dimensions`. Optionally add `queryPrefix` and `documentPrefix` to prepend task-instruction strings to your inputs — useful for Gemini Embedding 2's asymmetric retrieval format:
+
+```json
+"embedding": {
+  "provider": "gemini",
+  "model": "gemini-embedding-2",
+  "dimensions": 1536,
+  "queryPrefix": "task: search result | query: ",
+  "documentPrefix": "title: none | text: "
+}
+```
+
+The three tasks can point at different providers, so you can mix OpenAI embeddings with Gemini generation, or run everything through one provider.
 
 ### Embedding files
 
@@ -57,10 +75,12 @@ The vocab embeddings (~41 MB) are not included in the repo. Download and place t
 - `vocab_embeddings.bin`
 - `vocab_embeddings_index.json`
 
-> **Alternatively**, rebuild them yourself (requires `AI_API_KEY`, costs ~$0.02 in embedding tokens):
+> **Alternatively**, rebuild them yourself (costs ~$0.02 with OpenAI's `text-embedding-3-small`):
 > ```bash
-> AI_API_KEY=your_key node scripts/embed-vocab.js
+> node scripts/embed-vocab.js
 > ```
+> The script reads your `embedding` task config from `config.json`, so make sure that's set up first.
+> Note: if you switch embedding models, the stored vectors and the live query vectors must come from the same model — a mismatch will silently return bad results. Rebuild whenever you change the model or dimensions.
 
 ### Run
 
@@ -76,7 +96,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - **Backend:** Node.js, Express 5, kuromoji (Japanese tokeniser)
 - **Frontend:** Vanilla JS, single HTML file
-- **Embeddings:** `text-embedding-3-small` via OpenAI-compatible API
-- **Prompt enhancement:** `gemini-2.5-flash` (no thinking)
-- **Story generation:** `gemini-3.5-flash`, streaming SSE (no thinking)
+- **Embeddings:** configurable — OpenAI or Gemini provider, any compatible model
+- **Prompt enhancement:** configurable — defaults to `gemini-2.5-flash` (no thinking)
+- **Story generation:** configurable — defaults to `gemini-2.5-flash`, streaming SSE (no thinking)
 - **Annotation:** greedy longest-match merge over kuromoji tokens → WaniKani vocab lookup

@@ -1,15 +1,30 @@
 {
   "port": 3000,
-  "embedding": {
-    "url": "https://api.openai.com/v1/embeddings",
-    "apiKeyCmd": "security find-generic-password -a api-keys -s openai -w",
-    "model": "text-embedding-3-small"
+  "providers": {
+    "openai": {
+      "type": "openai",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKeyCmd": "security find-generic-password -a api-keys -s openai -w"
+    },
+    "gemini": {
+      "type": "gemini",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/models",
+      "apiKeyCmd": "security find-generic-password -a api-keys -s google -w"
+    }
   },
-  "gemini": {
-    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/models",
-    "apiKeyCmd": "security find-generic-password -a api-keys -s google -w",
-    "authHeader": "x-goog-api-key",
-    "enhanceModel": "gemini-2.5-flash",
-    "storyModel": "gemini-3.5-flash"
+  "tasks": {
+    "embedding": {
+      "provider": "openai",
+      "model": "text-embedding-3-small",
+      "dimensions": 1536
+    },
+    "enhance": {
+      "provider": "gemini",
+      "model": "gemini-2.5-flash"
+    },
+    "story": {
+      "provider": "gemini",
+      "model": "gemini-2.5-flash"
+    }
   }
 }

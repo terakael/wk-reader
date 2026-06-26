@@ -7,16 +7,16 @@
  * Usage:
  *   node scripts/embed-vocab.js
  *
- * Reads embedding.url, embedding.model, and embedding.apiKey / embedding.apiKeyCmd from config.json.
+ * Reads embedding task config from config.json (tasks.embedding + the referenced provider).
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { execSync } from "child_process";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { createEmbeddingAdapter } from "../adapters/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "..");
+const ROOT      = join(__dirname, "..");
 
 const configPath = join(ROOT, "config.json");
 if (!existsSync(configPath)) {
@@ -25,20 +25,16 @@ if (!existsSync(configPath)) {
 }
 const cfg = JSON.parse(readFileSync(configPath, "utf8"));
 
-function resolve(section, field) {
-  const cmdKey = `${field}Cmd`;
-  if (section[cmdKey]) return execSync(section[cmdKey], { encoding: "utf8" }).trim();
-  if (section[field])  return section[field];
-  throw new Error(`config.json: missing "${field}" or "${cmdKey}"`);
-}
+const taskCfg    = cfg.tasks?.embedding;
+const MODEL      = taskCfg?.model;
+const DIMENSIONS = taskCfg?.dimensions;
 
-const API_URL = cfg.embedding.url;
-const MODEL   = cfg.embedding.model || "text-embedding-3-small";
-const apiKey  = resolve(cfg.embedding, "apiKey");
-const DIMENSIONS = 1536;
+if (!MODEL)      throw new Error("config.json: tasks.embedding.model is required");
+if (!DIMENSIONS) throw new Error("config.json: tasks.embedding.dimensions is required");
+
+const embedAdapter = createEmbeddingAdapter(cfg, "embedding");
+
 const BATCH_SIZE = 100;
-const RETRY_LIMIT = 3;
-const RETRY_DELAY_MS = 2000;
 
 // ── Load + sort vocab ─────────────────────────────────────────────────────────
 
@@ -48,16 +44,16 @@ const items = [];
 for (let level = 1; level <= 60; level++) {
   for (const item of vocabByLevel[String(level)] || []) {
     items.push({
-      character: item.character,
-      reading: item.reading || "",
-      primary_meaning: item.primary_meaning || item.meaning || "",
+      character:            item.character,
+      reading:              item.reading              || "",
+      primary_meaning:      item.primary_meaning      || item.meaning || "",
       alternative_meanings: item.alternative_meanings || [],
       level,
       url: item.url || "",
     });
   }
 }
-// Sort ascending by level so rows 0..maxRowByLevel[N] covers all levels ≤ N
+// Sort ascending by level so rows 0..maxRowByLevel[N] covers all levels ≤ N.
 items.sort((a, b) => a.level - b.level);
 
 console.log(`Loaded ${items.length} vocab items across 60 levels.`);
@@ -65,44 +61,9 @@ console.log(`Loaded ${items.length} vocab items across 60 levels.`);
 // ── Build embedding text ──────────────────────────────────────────────────────
 
 function embeddingText(item) {
-  const alts = item.alternative_meanings.slice(0, 4).join(", ");
+  const alts     = item.alternative_meanings.slice(0, 4).join(", ");
   const meanings = alts ? `${item.primary_meaning}, ${alts}` : item.primary_meaning;
   return `Word: ${item.character}\nReading: ${item.reading}\nMeanings: ${meanings}`;
-}
-
-// ── Embed helpers ─────────────────────────────────────────────────────────────
-
-
-async function embedBatch(texts, attempt = 1) {
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ input: texts, model: MODEL }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    if (attempt < RETRY_LIMIT) {
-      console.warn(`  Batch failed (${res.status}), retrying in ${RETRY_DELAY_MS}ms… [${body.slice(0,120)}]`);
-      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * attempt));
-      return embedBatch(texts, attempt + 1);
-    }
-    throw new Error(`Embedding API error ${res.status}: ${body}`);
-  }
-
-  const json = await res.json();
-  // API returns data sorted by index
-  return json.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
-}
-
-function l2normalize(vec) {
-  let norm = 0;
-  for (const v of vec) norm += v * v;
-  norm = Math.sqrt(norm);
-  return norm > 0 ? vec.map((v) => v / norm) : vec;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -119,10 +80,10 @@ for (let b = 0; b < batches; b++) {
 
   process.stdout.write(`  Batch ${b + 1}/${batches} (items ${start}–${end - 1})… `);
 
-  const embeddings = await embedBatch(texts);
+  const vecs = await embedAdapter.embedBatch(texts);
 
-  for (let i = 0; i < embeddings.length; i++) {
-    allVectors.set(l2normalize(embeddings[i]), (start + i) * DIMENSIONS);
+  for (let i = 0; i < vecs.length; i++) {
+    allVectors.set(vecs[i], (start + i) * DIMENSIONS);
   }
 
   console.log("done");
@@ -130,8 +91,6 @@ for (let b = 0; b < batches; b++) {
 
 // ── Build index ───────────────────────────────────────────────────────────────
 
-// maxRowByLevel[N] = number of rows whose level <= N
-// rows are level-sorted, so rows 0..maxRowByLevel[N]-1 cover all levels 1..N
 const maxRowByLevel = {};
 {
   let i = 0;
@@ -143,9 +102,9 @@ const maxRowByLevel = {};
 
 const index = {
   meta: {
-    model: MODEL,
+    model:      MODEL,
     dimensions: DIMENSIONS,
-    count: items.length,
+    count:      items.length,
     normalized: true,
     created_at: new Date().toISOString(),
   },
