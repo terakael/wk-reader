@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WaniKani Story Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      /* Everforest-inspired dark palette */
+      --bg:        #252321;
+      --surface:   #2d2a27;
+      --surface2:  #353129;
+      --surface3:  #3d382f;
+      --accent:    #e67e80;  /* everforest red */
+      --accent2:   #e69d5e;  /* everforest orange */
+      --accent3:   #a7c080;  /* everforest green */
+      --text:      #d3c6aa;
+      --text-muted:#859289;
+      --border:    #3d382f;
+      --popup-bg:  #2d2a27;
+      /* within level — green */
+      --hl-known:       rgba(167, 192, 128, 0.20);
+      --hl-known-hover: rgba(167, 192, 128, 0.35);
+      --hl-known-line:  #a7c080;
+      /* above level — orange */
+      --hl-above:       rgba(230, 157, 94, 0.22);
+      --hl-above-hover: rgba(230, 157, 94, 0.38);
+      --hl-above-line:  #e69d5e;
+      /* not in WaniKani — red */
+      --hl-unknown:       rgba(230, 126, 128, 0.15);
+      --hl-unknown-hover: rgba(230, 126, 128, 0.30);
+      --hl-unknown-line:  #e67e80;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      padding: 1.2rem 1rem 0.6rem;
+      flex-shrink: 0;
+    }
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.02em;
+    }
+    header p {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-top: 0.25rem;
+    }
+
+    /* ── Story area (scrollable middle) ── */
+    #story-wrap {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem 1rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    #story-inner {
+      width: 100%;
+      max-width: 720px;
+    }
+
+    .story-hint {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-style: italic;
+      text-align: center;
+      margin-top: 3rem;
+    }
+
+    .story-status {
+      color: var(--text-muted);
+      font-size: 1rem;
+      font-style: italic;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 2rem 0;
+    }
+    .story-status .dot-pulse {
+      display: flex;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    .story-status .dot-pulse span {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    .story-status .dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+    .story-status .dot-pulse span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40%            { opacity: 1;   transform: scale(1); }
+    }
+
+    #story-output {
+      font-size: 1.4rem;
+      line-height: 2.4;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Action bar below story ── */
+    #story-actions {
+      display: none;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    #story-actions.visible { display: flex; }
+
+
+    #more-btn {
+      padding: 0.45rem 1.1rem;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #more-btn:hover { border-color: var(--accent); background: rgba(230,126,128,0.10); }
+    #more-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      gap: 1.2rem;
+      flex-wrap: wrap;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-left: auto;
+    }
+    .legend-item { display: flex; align-items: center; gap: 0.35rem; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+    .legend-dot.known   { background: var(--hl-known-line); opacity: 0.9; }
+    .legend-dot.above   { background: var(--hl-above-line); opacity: 0.9; }
+    .legend-dot.unknown { background: var(--hl-unknown-line); opacity: 0.9; }
+
+
+
+    /* ── Bottom controls panel ── */
+    #controls-panel {
+      flex-shrink: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 1rem 1rem 1.1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    #controls-inner {
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    /* Level slider row */
+    .level-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .level-row label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      font-weight: 600;
+      white-space: nowrap;
+      min-width: 5.5rem;
+    }
+    #level-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--surface3);
+      outline: none;
+      cursor: pointer;
+    }
+    #level-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--bg);
+      transition: transform 0.1s;
+    }
+    #level-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+    #level-slider::-moz-range-thumb {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--bg);
+    }
+    #level-display {
+      color: var(--accent2);
+      font-weight: 700;
+      font-size: 0.95rem;
+      min-width: 3.5rem;
+      text-align: right;
+    }
+
+    /* Prompt row */
+    .prompt-row {
+      display: flex;
+      gap: 0.6rem;
+      align-items: flex-start;
+    }
+    .prompt-btns {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      flex-shrink: 0;
+    }
+    #prompt-input {
+      flex: 1;
+      padding: 0.6rem 0.8rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+      font-family: inherit;
+      resize: vertical;
+      line-height: 1.5;
+      overflow-y: auto;
+      transition: border-color 0.15s;
+    }
+    #prompt-input:focus { outline: none; border-color: var(--accent3); }
+    #prompt-input::placeholder { color: var(--text-muted); font-style: italic; }
+
+    #generate-btn {
+      padding: 0.6rem 1.4rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.15s;
+      width: 100%;
+      flex-shrink: 0;
+    }
+    #generate-btn:hover { opacity: 0.88; }
+    #generate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #random-btn {
+      padding: 0.45rem 1rem;
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+      width: 100%;
+    }
+    #random-btn:hover { color: var(--accent2); border-color: var(--accent2); }
+    #random-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .error-msg {
+      color: var(--accent);
+      font-size: 0.85rem;
+      display: none;
+    }
+    .error-msg.visible { display: block; }
+
+    /* ── Annotated spans ── */
+    .wk-known {
+      cursor: pointer;
+      border-bottom: 2px solid var(--hl-known-line);
+      background: var(--hl-known);
+      border-radius: 3px;
+      padding: 0 1px;
+      transition: background 0.12s;
+    }
+    .wk-known:hover { background: var(--hl-known-hover); }
+
+    .wk-above {
+      cursor: pointer;
+      border-bottom: 2px solid var(--hl-above-line);
+      background: var(--hl-above);
+      border-radius: 3px;
+      padding: 0 1px;
+      transition: background 0.12s;
+    }
+    .wk-above:hover { background: var(--hl-above-hover); }
+
+    .wk-unknown {
+      cursor: pointer;
+      border-bottom: 2px solid var(--hl-unknown-line);
+      background: var(--hl-unknown);
+      border-radius: 3px;
+      padding: 0 1px;
+      transition: background 0.12s;
+    }
+    .wk-unknown:hover { background: var(--hl-unknown-hover); }
+
+    /* ── Popup ── */
+    #popup {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      max-width: 300px;
+      min-width: 210px;
+      background: var(--popup-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      pointer-events: none;
+    }
+    #popup.visible {
+      display: block;
+      pointer-events: auto;
+    }
+
+    .popup-char {
+      font-size: 2.2rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+    .popup-reading {
+      font-size: 1rem;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+    .popup-inflected {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 0.3rem;
+      font-style: italic;
+    }
+    .popup-meaning {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.3rem;
+    }
+    .popup-alt {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+    .popup-kanji-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .popup-kanji-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.25rem 0.5rem;
+      min-width: 48px;
+    }
+    .popup-kanji-chip .chip-char {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--accent2);
+      line-height: 1.2;
+    }
+    .popup-kanji-chip .chip-reading {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+    .popup-kanji-chip .chip-meaning {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+    }
+    .popup-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-top: 0.5rem;
+    }
+    .popup-level-badge {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.15rem 0.45rem;
+      font-size: 0.72rem;
+      color: var(--accent2);
+      font-weight: 700;
+    }
+    .popup-wk-link {
+      font-size: 0.78rem;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .popup-wk-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>WaniKani Story Generator</h1>
+  <p>Click any highlighted word to see its details</p>
+</header>
+
+<!-- Scrollable story area -->
+<div id="story-wrap">
+  <div id="story-inner">
+    <p class="story-hint" id="story-hint">Your story will appear here.</p>
+    <div id="story-output"></div>
+    <div id="story-actions">
+      <button id="more-btn">Continue story ›</button>
+      <div class="legend" id="legend">
+        <div class="legend-item"><div class="legend-dot known"></div> Within level</div>
+        <div class="legend-item"><div class="legend-dot above"></div> Above level</div>
+        <div class="legend-item"><div class="legend-dot unknown"></div> Not in WaniKani</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Fixed bottom controls -->
+<div id="controls-panel">
+  <div id="controls-inner">
+    <div class="level-row">
+      <label>WaniKani Level</label>
+      <input type="range" id="level-slider" min="1" max="60" value="5" />
+      <span id="level-display">Level 5</span>
+    </div>
+    <div class="prompt-row">
+      <textarea id="prompt-input" rows="3" placeholder="Enter a story prompt, or click Random"></textarea>
+      <div class="prompt-btns">
+        <button id="generate-btn">Generate</button>
+        <button id="random-btn">↺ Random</button>
+      </div>
+    </div>
+    <div class="error-msg" id="error-msg"></div>
+  </div>
+</div>
+
+<!-- Popup -->
+<div id="popup"></div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let vocabMap       = {};   // char → item  (within selected level)
+let allVocabMap    = {};   // char → item  (all 60 levels)
+let readingMap     = {};   // hiragana reading → item (all levels, for mixed kana fallback)
+let allKanjiCharMap = {};  // single kanji character → kanji item (all 60 levels)
+let dataLevel   = 0;
+let currentLevel = 5;
+let isGenerating = false;
+let storyRaw = "";   // accumulated raw story text (all segments)
+
+const levelSlider  = document.getElementById("level-slider");
+const levelDisplay = document.getElementById("level-display");
+const promptInput  = document.getElementById("prompt-input");
+const generateBtn  = document.getElementById("generate-btn");
+const moreBtn      = document.getElementById("more-btn");
+const storyOutput  = document.getElementById("story-output");
+const storyHint    = document.getElementById("story-hint");
+const storyActions = document.getElementById("story-actions");
+const popup        = document.getElementById("popup");
+const errorMsg     = document.getElementById("error-msg");
+const randomBtn    = document.getElementById("random-btn");
+const storyWrap    = document.getElementById("story-wrap");
+
+function makeStatusNode(text) {
+  const el = document.createElement("div");
+  el.className = "story-status";
+  el.innerHTML = `<div class="dot-pulse"><span></span><span></span><span></span></div>${text}`;
+  return el;
+}
+
+// ── Level slider ─────────────────────────────────────────────────────────────
+levelSlider.addEventListener("input", () => {
+  currentLevel = parseInt(levelSlider.value, 10);
+  levelDisplay.textContent = `Level ${currentLevel}`;
+});
+
+// ── Random prompt ─────────────────────────────────────────────────────────
+async function fetchRandomPrompt() {
+  randomBtn.disabled = true;
+  const prev = randomBtn.textContent;
+  randomBtn.textContent = "↻…";
+  try {
+    const res  = await fetch(`/api/placeholder?level=${currentLevel}`);
+    const data = await res.json();
+    if (data.prompt) {
+      promptInput.value = data.prompt;
+      promptInput.style.height = "auto";
+      promptInput.style.height = promptInput.scrollHeight + "px";
+    }
+  } catch { /* silently ignore */ }
+  finally {
+    randomBtn.textContent = prev;
+    randomBtn.disabled = false;
+  }
+}
+
+randomBtn.addEventListener("click", fetchRandomPrompt);
+
+// Pre-fill on load
+fetchRandomPrompt();
+
+
+
+// ── Load data ─────────────────────────────────────────────────────────────────
+async function ensureData(level) {
+  if (level === dataLevel) return;
+  const res = await fetch(`/api/data/${level}`);
+  const { vocab, allVocab, allKanji } = await res.json();
+
+  vocabMap = {};
+  allVocabMap = {};
+  readingMap = {};
+  allKanjiCharMap = {};
+
+  vocab.sort((a, b) => b.character.length - a.character.length);
+  for (const item of vocab) vocabMap[item.character] = item;
+
+  allVocab.sort((a, b) => b.character.length - a.character.length);
+  for (const item of allVocab) {
+    allVocabMap[item.character] = item;
+    if (item.reading) {
+      const hira = katakanaToHiragana(item.reading);
+      if (!readingMap[hira]) readingMap[hira] = item; // first (lowest level) wins
+    }
+  }
+
+  for (const item of allKanji) {
+    allKanjiCharMap[item.character] = item;
+  }
+
+  dataLevel = level;
+}
+
+function katakanaToHiragana(str) {
+  return str.replace(/[ァ-ヶ]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+}
+
+// ── Annotation ────────────────────────────────────────────────────────────────
+// Uses kuromoji tokens from the server — each token has { surface, dict }.
+// Three tiers based on vocab map lookup of the dict form:
+//   wk-known   — green  — within selected level
+//   wk-above   — yellow — in WaniKani but above selected level
+//   wk-unknown — red    — kanji not in WaniKani at all
+
+function isKanjiStr(s) {
+  return [...s].some(ch => {
+    const cp = ch.codePointAt(0);
+    return cp >= 0x4e00 && cp <= 0x9fff;
+  });
+}
+
+function spanClass(item) {
+  return item.level <= currentLevel ? "wk-known" : "wk-above";
+}
+
+function annotateTokens(tokens) {
+  let html = "";
+  let i = 0;
+  while (i < tokens.length) {
+    // ── Greedy longest-match merge ────────────────────────────────────────────
+    // Try merging up to MAX_MERGE consecutive token surfaces before falling back
+    // to single-token logic. Catches WaniKani compounds (e.g. 一人, 大人) that
+    // kuromoji splits into individual morphemes.
+    const MAX_MERGE = 5;
+    let mergeHit = false;
+    for (let k = Math.min(MAX_MERGE, tokens.length - i); k > 1; k--) {
+      const merged = tokens.slice(i, i + k).map(t => t.surface).join("");
+      if (!isKanjiStr(merged)) continue;
+      const item = vocabMap[merged] || allVocabMap[merged];
+      if (item) {
+        html += `<span class="${spanClass(item)}" data-char="${esc(item.character)}" data-surface="${esc(merged)}">${esc(merged)}</span>`;
+        i += k;
+        mergeHit = true;
+        break;
+      }
+    }
+    if (mergeHit) continue;
+
+    // ── Single-token fallback ─────────────────────────────────────────────────
+    const { surface, dict, reading } = tokens[i];
+    i++;
+
+    // 1. Direct lookup by dict form
+    let item = vocabMap[dict] || allVocabMap[dict];
+
+    // 2. Surface lookup (handles cases where surface === WK character but dict differs)
+    if (!item) item = vocabMap[surface] || allVocabMap[surface];
+
+    // 3. Reading fallback (catches mixed kana like 気もち → 気持ち)
+    //    Gated on isKanjiStr to prevent pure-kana grammar tokens from false-matching.
+    if (!item && reading && isKanjiStr(surface)) {
+      const hira = katakanaToHiragana(reading);
+      item = readingMap[hira];
+    }
+
+    if (item) {
+      html += `<span class="${spanClass(item)}" data-char="${esc(item.character)}" data-surface="${esc(surface)}">${esc(surface)}</span>`;
+    } else if (isKanjiStr(surface)) {
+      // Character-level fallback: annotate each kanji individually.
+      let inner = "";
+      for (const ch of surface) {
+        const cp = ch.codePointAt(0);
+        if (cp >= 0x4e00 && cp <= 0x9fff) {
+          const ki = allKanjiCharMap[ch];
+          if (ki) {
+            const cls = ki.level <= currentLevel ? "wk-known" : "wk-above";
+            inner += `<span class="${cls}" data-char="${esc(ch)}" data-kanji="true" data-surface="${esc(ch)}">${esc(ch)}</span>`;
+          } else {
+            inner += `<span class="wk-unknown">${esc(ch)}</span>`;
+          }
+        } else {
+          inner += esc(ch);
+        }
+      }
+      html += inner;
+    } else {
+      html += esc(surface);
+    }
+  }
+  return html;
+}
+
+
+function esc(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── Stream handler ────────────────────────────────────────────────────────────
+async function runGenerate(prompt, isMore = false) {
+  if (isGenerating) return;
+  isGenerating = true;
+  setError(null);
+
+  await ensureData(currentLevel);
+
+  if (!isMore) {
+    storyRaw = "";
+    storyOutput.innerHTML = "";
+    storyHint.style.display = "none";
+    storyActions.classList.remove("visible");
+  }
+
+  if (isMore && storyRaw) {
+    const sep = document.createElement("span");
+    sep.textContent = "　";
+    storyOutput.appendChild(sep);
+  }
+
+  // Status node lives inside the story area until the first delta arrives
+  const statusNode = makeStatusNode("Finding vocabulary…");
+  storyOutput.appendChild(statusNode);
+
+  let segmentRaw = "";
+  let streamNode = null; // created on first delta
+
+  generateBtn.disabled = true;
+  moreBtn.disabled = true;
+  randomBtn.disabled = true;
+
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: currentLevel, prompt, context: isMore ? storyRaw : "" }),
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+
+      const lines = buf.split("\n");
+      buf = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const payload = JSON.parse(line.slice(5).trim());
+
+        if (payload.type === "status") {
+          statusNode.lastChild.textContent = payload.data;
+        } else if (payload.type === "words") {
+          // word list no longer shown in UI — data still received but ignored
+        } else if (payload.type === "delta") {
+          // Replace status node with stream text on first delta
+          if (!streamNode) {
+            streamNode = document.createTextNode("");
+            statusNode.replaceWith(streamNode);
+          }
+          segmentRaw += payload.data;
+          streamNode.textContent = segmentRaw;
+          storyWrap.scrollTop = storyWrap.scrollHeight;
+        } else if (payload.type === "done") {
+          storyRaw += segmentRaw;
+          const span = document.createElement("span");
+          span.innerHTML = annotateTokens(payload.data.tokens);
+          if (streamNode) streamNode.replaceWith(span);
+          else statusNode.replaceWith(span);
+          attachPopupListeners(span);
+          storyActions.classList.add("visible");
+          storyWrap.scrollTop = storyWrap.scrollHeight;
+        } else if (payload.type === "error") {
+          setError(payload.data);
+          statusNode.remove();
+          streamNode?.remove();
+        }
+      }
+    }
+  } catch (err) {
+    setError(err.message || "Something went wrong.");
+    statusNode.remove();
+    streamNode?.remove();
+  } finally {
+    isGenerating = false;
+    generateBtn.disabled = false;
+    moreBtn.disabled = false;
+    randomBtn.disabled = false;
+  }
+}
+
+// ── Buttons ───────────────────────────────────────────────────────────────────
+generateBtn.addEventListener("click", () => {
+  const prompt = promptInput.value.trim();
+  runGenerate(prompt, false);
+});
+
+moreBtn.addEventListener("click", () => {
+  const prompt = promptInput.value.trim() || "Continue the story.";
+  runGenerate(prompt, true);
+});
+
+function setError(msg) {
+  errorMsg.textContent = msg || "";
+  errorMsg.classList.toggle("visible", !!msg);
+}
+
+// ── Popup ─────────────────────────────────────────────────────────────────────
+function attachPopupListeners(root) {
+  root.querySelectorAll(".wk-known, .wk-above, .wk-unknown").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const item = vocabMap[el.dataset.char] || allVocabMap[el.dataset.char]
+               || (el.dataset.kanji && allKanjiCharMap[el.dataset.char]);
+      if (item) showPopup(item, e, el.dataset.surface || el.dataset.char);
+    });
+  });
+}
+
+function showPopup(item, event, surface) {
+  const alts = item.alternative_meanings?.join(", ");
+  const inflected = surface && surface !== item.character
+    ? `<div class="popup-inflected">${esc(surface)} → ${esc(item.character)}</div>`
+    : "";
+
+  // Kanji items use a readings object; vocab items use a plain reading string.
+  const reading = item.reading
+    || [...(item.readings?.["on'yomi"] || []), ...(item.readings?.["kun'yomi"] || [])]
+        .slice(0, 3).join("、");
+
+  const kanjiChips = (item.kanji_composition || []).map(k => `
+    <div class="popup-kanji-chip">
+      <span class="chip-char">${esc(k.kanji)}</span>
+      <span class="chip-reading">${esc(k.reading)}</span>
+      <span class="chip-meaning">${esc(k.meaning)}</span>
+    </div>`).join("");
+
+  popup.innerHTML = `
+    <div class="popup-char">${esc(item.character)}</div>
+    ${inflected}
+    <div class="popup-reading">${esc(reading)}</div>
+    <div class="popup-meaning">${esc(item.primary_meaning || item.meaning || "")}</div>
+    ${alts ? `<div class="popup-alt">Also: ${esc(alts)}</div>` : ""}
+    ${kanjiChips ? `<div class="popup-kanji-row">${kanjiChips}</div>` : ""}
+    <div class="popup-meta">
+      <span class="popup-level-badge">Level ${item.level}</span>
+      <a class="popup-wk-link" href="${item.url}" target="_blank" rel="noopener">WaniKani ↗</a>
+    </div>
+  `;
+
+  positionPopup(event);
+}
+
+function positionPopup(event) {
+  popup.classList.add("visible");
+
+  // Measure after making visible
+  requestAnimationFrame(() => {
+    const margin = 12;
+    const pw = popup.offsetWidth;
+    const ph = popup.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let x = event.clientX + margin;
+    let y = event.clientY + margin;
+    if (x + pw > vw - margin) x = event.clientX - pw - margin;
+    if (y + ph > vh - margin) y = event.clientY - ph - margin;
+    if (x < margin) x = margin;
+    if (y < margin) y = margin;
+
+    popup.style.left = `${x}px`;
+    popup.style.top  = `${y}px`;
+  });
+}
+
+document.addEventListener("click", (e) => {
+  if (!popup.contains(e.target) && !e.target.closest(".wk-known, .wk-above, .wk-unknown, .word-chip")) {
+    popup.classList.remove("visible");
+  }
+});
+</script>
+</body>
+</html>

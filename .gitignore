@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Embedding artifacts — large binary, hosted separately
+vocab_embeddings.bin
+vocab_embeddings_index.json
+
+# Source vocab data — commit vocabulary.json and kanji.json instead
+vocabulary.csv
+vocab_levels/
+
+# Environment
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*

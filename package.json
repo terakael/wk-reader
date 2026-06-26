@@ -1,0 +1,19 @@
+{
+  "name": "wk",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.2",
+    "express": "^5.2.1",
+    "kuromoji": "^0.1.2"
+  }
+}
