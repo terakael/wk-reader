@@ -108,48 +108,24 @@ function l2normalize(vec) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 const allVectors = new Float32Array(items.length * DIMENSIONS);
-let totalTokens = 0;
 
 const batches = Math.ceil(items.length / BATCH_SIZE);
 console.log(`Embedding in ${batches} batches of up to ${BATCH_SIZE}…\n`);
 
 for (let b = 0; b < batches; b++) {
   const start = b * BATCH_SIZE;
-  const end = Math.min(start + BATCH_SIZE, items.length);
-  const slice = items.slice(start, end);
-  const texts = slice.map(embeddingText);
+  const end   = Math.min(start + BATCH_SIZE, items.length);
+  const texts = items.slice(start, end).map(embeddingText);
 
   process.stdout.write(`  Batch ${b + 1}/${batches} (items ${start}–${end - 1})… `);
 
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ input: texts, model: MODEL }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    if (b > 0) {
-      // save progress before dying
-      console.error(`\nFailed at batch ${b + 1}. Partial output not saved.`);
-    }
-    throw new Error(`API error ${res.status}: ${body.slice(0, 200)}`);
-  }
-
-  const json = await res.json();
-  totalTokens += json.usage?.total_tokens || 0;
-
-  const embeddings = json.data
-    .sort((a, b) => a.index - b.index)
-    .map((d) => d.embedding);
+  const embeddings = await embedBatch(texts);
 
   for (let i = 0; i < embeddings.length; i++) {
-    const normalised = l2normalize(embeddings[i]);
-    const offset = (start + i) * DIMENSIONS;
-    allVectors.set(normalised, offset);
+    allVectors.set(l2normalize(embeddings[i]), (start + i) * DIMENSIONS);
   }
 
-  console.log(`done (${json.usage?.total_tokens ?? "?"} tokens)`);
+  console.log("done");
 }
 
 // ── Build index ───────────────────────────────────────────────────────────────
@@ -172,7 +148,6 @@ const index = {
     count: items.length,
     normalized: true,
     created_at: new Date().toISOString(),
-    total_tokens_used: totalTokens,
   },
   maxRowByLevel,
   items: items.map((item, row) => ({ row, ...item })),
@@ -189,4 +164,3 @@ writeFileSync(idxPath, JSON.stringify(index));
 const binMB = (allVectors.buffer.byteLength / 1024 / 1024).toFixed(1);
 console.log(`\n✓ ${binPath} (${binMB} MB)`);
 console.log(`✓ ${idxPath} (${items.length} items)`);
-console.log(`  Total tokens used: ${totalTokens.toLocaleString()}`);

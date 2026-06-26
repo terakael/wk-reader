@@ -33,8 +33,8 @@ const EMBED_KEY     = resolve(cfg.embedding, "apiKey");
 const GEMINI_BASE   = cfg.gemini.baseUrl;
 const GEMINI_KEY    = resolve(cfg.gemini, "apiKey");
 const GEMINI_AUTH   = cfg.gemini.authHeader || "Authorization";
-const ENHANCE_MODEL = cfg.gemini.enhanceModel || ENHANCE_MODEL;
-const STORY_MODEL   = cfg.gemini.storyModel   || STORY_MODEL;
+const ENHANCE_MODEL = cfg.gemini.enhanceModel || "gemini-2.5-flash";
+const STORY_MODEL   = cfg.gemini.storyModel   || "gemini-3.5-flash";
 const EMBED_DIM     = 1536;
 
 // ── Startup data ──────────────────────────────────────────────────────────────
@@ -238,20 +238,15 @@ app.post("/api/generate", async (req, res) => {
   try {
     send("status", "Finding vocabulary...");
 
-    // Embed the raw prompt and enhance it concurrently — neither depends on the other.
-    // Enhancement doesn't get rough-words context this way, but with thinking off
-    // it stays grounded enough and we save ~400ms of sequential latency.
-    const [, expanded] = await Promise.all([
-      embed(userPrompt),
-      geminiOnce(
-        ENHANCE_MODEL,
-        "Expand the user's story prompt into 2–3 sentences of vivid scene description. " +
-        "Focus on concrete nouns, actions, emotions, and setting. " +
-        "Reply with only the expanded description, no preamble.",
-        userPrompt,
-        { thinkingConfig: { thinkingBudget: 0 } }
-      ).catch(() => userPrompt),
-    ]);
+    // Enhance the prompt — expand into vivid scene description for better embedding
+    const expanded = await geminiOnce(
+      ENHANCE_MODEL,
+      "Expand the user's story prompt into 2\u20133 sentences of vivid scene description. " +
+      "Focus on concrete nouns, actions, emotions, and setting. " +
+      "Reply with only the expanded description, no preamble.",
+      userPrompt,
+      { thinkingConfig: { thinkingBudget: 0 } }
+    ).catch(() => userPrompt);
 
     // Re-embed the grounded description → final vocab retrieval
     const queryVec      = await embed(expanded);

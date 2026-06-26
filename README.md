@@ -36,6 +36,20 @@ cd wk-reader
 npm install
 ```
 
+### Configure
+
+Copy the example config and fill in your values:
+
+```bash
+cp config.example.json config.json
+```
+
+Edit `config.json` with your API endpoints and keys. Each `apiKey` field also accepts an `apiKeyCmd` sibling — a shell command whose stdout is used as the key:
+
+```json
+"apiKeyCmd": "security find-generic-password -a api-keys -s openai -w"
+```
+
 ### Embedding files
 
 The vocab embeddings (~41 MB) are not included in the repo. Download and place them in the project root:
@@ -51,7 +65,7 @@ The vocab embeddings (~41 MB) are not included in the repo. Download and place t
 ### Run
 
 ```bash
-AI_API_KEY=your_key node server.js
+node server.js
 ```
 
 Open [http://localhost:3000](http://localhost:3000).

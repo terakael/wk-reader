@@ -12,7 +12,6 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.2",
     "express": "^5.2.1",
     "kuromoji": "^0.1.2"
   }
