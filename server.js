@@ -333,4 +333,26 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
+app.post("/api/explain", async (req, res) => {
+  const { text, sentence } = req.body;
+  if (!text) return res.status(400).json({ error: "text required" });
+
+  try {
+    const explanation = await enhanceAdapter.generate(
+      "You are a Japanese grammar tutor helping a WaniKani learner read a story. " +
+      "The learner has highlighted a word or phrase and already knows its dictionary meaning — do NOT restate what it means or give its reading. " +
+      "Instead, explain in 2-3 sentences how it functions in the specific sentence provided. " +
+      "Start directly with its grammatical role or structural function — e.g. 'Directly modifies...', 'Marks the subject...', 'This pattern means X, and here it...'. " +
+      "If it is a grammar pattern (like ~の末に, ~てしまう), explain the pattern's function and how it plays out in this sentence. " +
+      "If it is a single word, explain its role in the sentence structure. " +
+      "Plain English. No intro phrases. No kanji readings in parentheses.",
+      `Sentence: ${sentence}\nHighlighted: ${text}`,
+      { thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 200 }
+    );
+    res.json({ explanation: explanation.trim() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", () => console.log(`http://localhost:${PORT}`));
