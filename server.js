@@ -333,6 +333,43 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
+// ── Jisho proxy ─────────────────────────────────────────────────────────────
+
+const jishoProxyCache = new Map();
+
+app.get("/api/jisho", async (req, res) => {
+  const { word } = req.query;
+  if (!word) return res.status(400).json({ error: "word required" });
+
+  if (jishoProxyCache.has(word)) return res.json(jishoProxyCache.get(word));
+
+  try {
+    const url = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(word)}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const entry = data.data?.[0];
+    // Only return a result if Jisho's top hit is actually the word we asked for
+    const isMatch = entry?.japanese?.some(j => j.word === word) || entry?.slug === word;
+    if (!entry || !isMatch) {
+      const result = { found: false };
+      jishoProxyCache.set(word, result);
+      return res.json(result);
+    }
+    const sense = entry.senses?.[0] || {};
+    const result = {
+      found: true,
+      reading: entry.japanese?.[0]?.reading || "",
+      meanings: sense.english_definitions?.slice(0, 3) || [],
+      partsOfSpeech: sense.parts_of_speech?.slice(0, 2) || [],
+      isCommon: entry.is_common || false,
+    };
+    jishoProxyCache.set(word, result);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/explain", async (req, res) => {
   const { text, sentence } = req.body;
   if (!text) return res.status(400).json({ error: "text required" });
@@ -340,12 +377,12 @@ app.post("/api/explain", async (req, res) => {
   try {
     const explanation = await enhanceAdapter.generate(
       "You are a Japanese grammar tutor helping a WaniKani learner read a story. " +
-      "The learner has highlighted a word or phrase and already knows its dictionary meaning — do NOT restate what it means or give its reading. " +
-      "Instead, explain in 2-3 sentences how it functions in the specific sentence provided. " +
-      "Start directly with its grammatical role or structural function — e.g. 'Directly modifies...', 'Marks the subject...', 'This pattern means X, and here it...'. " +
-      "If it is a grammar pattern (like ~の末に, ~てしまう), explain the pattern's function and how it plays out in this sentence. " +
-      "If it is a single word, explain its role in the sentence structure. " +
-      "Plain English. No intro phrases. No kanji readings in parentheses.",
+      "The learner has highlighted a word or phrase. Explain in 1-2 sentences how it works in THIS specific sentence. " +
+      "Ground your explanation in the actual content of the sentence — name the real subject, object, or situation rather than speaking abstractly about 'the action' or 'the verb'. " +
+      "Do NOT give a generic grammar explanation that could apply to any sentence. " +
+      "Do NOT restate the dictionary meaning or give the reading. " +
+      "Start directly with the grammatical function as it plays out in this sentence. " +
+      "Plain English. No intro phrases.",
       `Sentence: ${sentence}\nHighlighted: ${text}`,
       { thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 200 }
     );

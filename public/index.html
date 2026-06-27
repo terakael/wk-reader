@@ -704,6 +704,14 @@ function katakanaToHiragana(str) {
 //   wk-above   — yellow — in WaniKani but above selected level
 //   wk-unknown — red    — kanji not in WaniKani at all
 
+// True when every character is a CJK kanji (no okurigana, no kana)
+function isAllKanji(s) {
+  return s.length > 1 && [...s].every(ch => {
+    const cp = ch.codePointAt(0);
+    return cp >= 0x4e00 && cp <= 0x9fff;
+  });
+}
+
 function isKanjiStr(s) {
   return [...s].some(ch => {
     const cp = ch.codePointAt(0);
@@ -758,23 +766,30 @@ function annotateTokens(tokens) {
     if (item) {
       html += `<span class="${spanClass(item)}" data-char="${esc(item.character)}" data-surface="${esc(surface)}">${esc(surface)}</span>`;
     } else if (isKanjiStr(surface)) {
-      // Character-level fallback: annotate each kanji individually.
-      let inner = "";
-      for (const ch of surface) {
-        const cp = ch.codePointAt(0);
-        if (cp >= 0x4e00 && cp <= 0x9fff) {
-          const ki = allKanjiCharMap[ch];
-          if (ki) {
-            const cls = ki.level <= currentLevel ? "wk-known" : "wk-above";
-            inner += `<span class="${cls}" data-char="${esc(ch)}" data-kanji="true" data-surface="${esc(ch)}">${esc(ch)}</span>`;
+      if (isAllKanji(surface)) {
+        // All-kanji compound not in WaniKani (e.g. 発明) — keep as a unit
+        // and flag for lazy Jisho lookup on click.
+        html += `<span class="wk-unknown" data-char="${esc(dict)}" data-surface="${esc(surface)}" data-reading="${esc(katakanaToHiragana(reading))}" data-jisho="true">${esc(surface)}</span>`;
+      } else {
+        // Mixed kanji+kana compound (e.g. 動き出す) — annotate each kanji
+        // individually so the learner can see which components they know.
+        let inner = "";
+        for (const ch of surface) {
+          const cp = ch.codePointAt(0);
+          if (cp >= 0x4e00 && cp <= 0x9fff) {
+            const ki = allKanjiCharMap[ch];
+            if (ki) {
+              const cls = ki.level <= currentLevel ? "wk-known" : "wk-above";
+              inner += `<span class="${cls}" data-char="${esc(ch)}" data-kanji="true" data-surface="${esc(ch)}">${esc(ch)}</span>`;
+            } else {
+              inner += `<span class="wk-unknown">${esc(ch)}</span>`;
+            }
           } else {
-            inner += `<span class="wk-unknown">${esc(ch)}</span>`;
+            inner += esc(ch);
           }
-        } else {
-          inner += esc(ch);
         }
+        html += inner;
       }
-      html += inner;
     } else {
       html += esc(surface);
     }
@@ -908,6 +923,73 @@ function setError(msg) {
   errorMsg.classList.toggle("visible", !!msg);
 }
 
+// ── Jisho popup ──────────────────────────────────────────────────────────────
+
+const jishoCache = new Map();
+
+async function showJishoPopup(word, reading, event) {
+  popup.style.maxWidth = "";
+
+  // Build kanji chips immediately from local data
+  const kanjiChips = [...word]
+    .filter(ch => { const cp = ch.codePointAt(0); return cp >= 0x4e00 && cp <= 0x9fff; })
+    .map(ch => {
+      const ki = allKanjiCharMap[ch];
+      if (!ki) return "";
+      const chipReading = [...(ki.readings?.["on'yomi"] || []), ...(ki.readings?.["kun'yomi"] || [])][0] || "";
+      const chipMeaning = ki.primary_meaning || ki.meaning || "";
+      return `
+        <div class="popup-kanji-chip">
+          <span class="chip-char">${esc(ch)}</span>
+          <span class="chip-reading">${esc(chipReading)}</span>
+          <span class="chip-meaning">${esc(chipMeaning)}</span>
+        </div>`;
+    }).join("");
+
+  // Show immediately with loading state
+  popup.innerHTML = `
+    <div class="popup-char">${esc(word)}</div>
+    ${reading ? `<div class="popup-reading">${esc(reading)}</div>` : ""}
+    ${kanjiChips ? `<div class="popup-kanji-row">${kanjiChips}</div>` : ""}
+    <div class="explain-loading">
+      <div class="dot-pulse"><span></span><span></span><span></span></div>
+    </div>
+  `;
+  positionPopup(event);
+
+  // Fetch Jisho data (or use cache)
+  let data = jishoCache.get(word);
+  if (!data) {
+    try {
+      const res = await fetch(`/api/jisho?word=${encodeURIComponent(word)}`);
+      data = await res.json();
+    } catch (_) {
+      data = { found: false };
+    }
+    jishoCache.set(word, data);
+  }
+
+  const meaningsHtml = data.found
+    ? `<div class="popup-meaning">${esc(data.meanings[0] || "")}</div>
+       ${data.meanings.slice(1).length ? `<div class="popup-alt">Also: ${esc(data.meanings.slice(1).join(", "))}</div>` : ""}
+       ${data.partsOfSpeech?.length ? `<div class="popup-alt" style="color:var(--text-muted);font-style:italic">${esc(data.partsOfSpeech.join(", "))}</div>` : ""}`
+    : `<div class="popup-alt" style="font-style:italic">Not found in Jisho</div>`;
+
+  const jishoReading = data.found && data.reading ? data.reading : reading;
+
+  popup.innerHTML = `
+    <div class="popup-char">${esc(word)}</div>
+    ${jishoReading ? `<div class="popup-reading">${esc(jishoReading)}</div>` : ""}
+    ${meaningsHtml}
+    ${kanjiChips ? `<div class="popup-kanji-row">${kanjiChips}</div>` : ""}
+    <div class="popup-meta">
+      ${data.found
+        ? `<a class="popup-wk-link" href="https://jisho.org/word/${encodeURIComponent(word)}" target="_blank" rel="noopener">Jisho ↗</a>`
+        : ""}
+    </div>
+  `;
+}
+
 // ── Text selection → explain button ──────────────────────────────────────────
 const explainBtn = document.getElementById("explain-btn");
 
@@ -1009,6 +1091,10 @@ function attachPopupListeners(root) {
     el.addEventListener("touchend", (e) => {
       if (Date.now() - touchStartTime > 500) return;
       e.preventDefault(); // suppress the synthetic mouseup/click
+      if (el.dataset.jisho) {
+        showJishoPopup(el.dataset.char, el.dataset.reading, e.changedTouches[0]);
+        return;
+      }
       const item = vocabMap[el.dataset.char] || allVocabMap[el.dataset.char]
                || (el.dataset.kanji && allKanjiCharMap[el.dataset.char]);
       if (item) showPopup(item, e.changedTouches[0], el.dataset.surface || el.dataset.char);
@@ -1018,6 +1104,10 @@ function attachPopupListeners(root) {
     el.addEventListener("mouseup", (e) => {
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed) return; // user was selecting text, not clicking
+      if (el.dataset.jisho) {
+        showJishoPopup(el.dataset.char, el.dataset.reading, e);
+        return;
+      }
       const item = vocabMap[el.dataset.char] || allVocabMap[el.dataset.char]
                || (el.dataset.kanji && allKanjiCharMap[el.dataset.char]);
       if (item) showPopup(item, e, el.dataset.surface || el.dataset.char);
