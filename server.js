@@ -214,9 +214,27 @@ app.get("/api/placeholder", async (req, res) => {
 
   const maxRow = embIndex.maxRowByLevel[maxLevel] ?? embIndex.meta.count;
   const pool   = embIndex.items.slice(0, maxRow);
-  const seeds  = [];
-  const used   = new Set();
-  while (seeds.length < 4 && seeds.length < pool.length) {
+
+  // Pick ~12 seeds with loose POS balance so the LLM has real thematic material.
+  // Aim for at least 4 nouns and 3 verbs/adjectives; fill the rest randomly.
+  const used  = new Set();
+  const seeds = [];
+  function pickCategory(filter, n) {
+    const candidates = pool.map((w, i) => ({ w, i })).filter(({ w, i }) => !used.has(i) && filter(w));
+    for (let c = 0; c < n && candidates.length > 0; c++) {
+      const pick = candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
+      used.add(pick.i);
+      seeds.push(pick.w);
+    }
+  }
+  const isNoun = w => { const p = posMap.get(w.row); return p === "noun" || p === "other"; };
+  const isVerb = w => posMap.get(w.row) === "verb";
+  const isAdj  = w => { const p = posMap.get(w.row); return p === "i-adj" || p === "na-adj" || p === "adj"; };
+  pickCategory(isNoun, 4);
+  pickCategory(isVerb, 3);
+  pickCategory(isAdj,  2);
+  // Fill remainder randomly up to 12
+  while (seeds.length < 12 && seeds.length < pool.length) {
     const idx = Math.floor(Math.random() * pool.length);
     if (!used.has(idx)) { used.add(idx); seeds.push(pool[idx]); }
   }
@@ -224,14 +242,15 @@ app.get("/api/placeholder", async (req, res) => {
 
   try {
     const prompt = await enhanceAdapter.generate(
-      "You generate one-sentence story prompt ideas for Japanese reading practice. " +
-      "Given a few Japanese vocabulary words, write a single natural English sentence describing a story scenario that could feature them. " +
-      "Be specific and vivid — name a character type, a setting, or a situation. " +
-      "Output only the sentence, no preamble, no quotes.",
-      `Vocabulary words: ${wordList}`,
+      "You write story prompts in the style of r/WritingPrompts — emotionally resonant, character-driven, with a specific human detail that makes them feel alive. " +
+      "You will be given a list of Japanese vocabulary words as loose thematic inspiration. " +
+      "Pick whichever words spark something interesting and ignore the rest — never try to use all of them, and never shoehorn a word in just because it's on the list. " +
+      "The prompt should feel like something a person genuinely wants to read: a situation with real emotional stakes, a small irony, or a poignant detail. " +
+      "Write one sentence. Output only the sentence — no preamble, no label like 'Prompt:', no quotes.",
+      `Inspiration words: ${wordList}`,
       { thinkingConfig: { thinkingBudget: 0 } }
     );
-    res.json({ prompt: prompt.trim() });
+    res.json({ prompt: prompt.trim().replace(/^prompt:\s*/i, "") });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
