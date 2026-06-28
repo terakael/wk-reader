@@ -139,17 +139,17 @@ function retrieveVocab(queryVec, maxLevel) {
     }
   }
 
-  pickTop(noun,     13);
-  pickTop(suruNoun,  4);
-  pickTop(verb,      7);
-  pickTop(adj,       5);
-  pickTop(adverb,    2);
+  pickTop(noun,     26);
+  pickTop(suruNoun,  8);
+  pickTop(verb,      14);
+  pickTop(adj,       10);
+  pickTop(adverb,    4);
 
-  // Wildcards: random sample from overall ranks 20–100, skip numbers + proper nouns
+  // Wildcards: random sample from overall ranks 20–200, skip numbers + proper nouns
   const wildcardPool = scores
-    .slice(20, 100)
+    .slice(20, 200)
     .filter(s => !picked.has(s.r) && s.pos !== "number");
-  while (result.length < 42 && wildcardPool.length > 0) {
+  while (result.length < 84 && wildcardPool.length > 0) {
     const i = Math.floor(Math.random() * wildcardPool.length);
     const s = wildcardPool.splice(i, 1)[0];
     picked.add(s.r);
@@ -293,7 +293,7 @@ app.post("/api/generate", async (req, res) => {
       if (pos === "adverb")   return "adverb";
       return "noun";
     };
-    const wordList     = selectedVocab.map(w => `${w.character}[${posLabel(w.pos)}]`).join("、");
+    const wordList     = selectedVocab.map(w => `${w.character}（${w.reading}、${w.primary_meaning}）[${posLabel(w.pos)}]`).join("、");
     const storyContext = context
       ? `The story so far:\n${context}\n\nContinue from where it left off. End at a new moment of genuine tension — complete your final sentence, but leave the situation unresolved.\n\nReminders for the continuation:\n- All the same vocabulary selection rules apply. Use only words from the provided list that fit naturally into where the story is going. Do not introduce new objects, details, or characters just to use vocabulary items.\n- Any word that already appeared in the story so far is also freely available to you — the provided list is additional vocabulary, not a replacement for what came before.\n- Maintain consistency with the story so far: use the same name or noun for each character (do not switch between 少女／女の子 or introduce 彼女).\n- Stay in plain form (常体) throughout. No です／ます in narration.\n- Keep tense consistent within each scene.`
       : `Story theme: ${userPrompt}`;
@@ -304,7 +304,7 @@ app.post("/api/generate", async (req, res) => {
       `The learner is at WaniKani level ${maxLevel}. However, the provided vocabulary list below is the complete source of truth for which content words the learner knows.`,
       ``,
       `Your task:`,
-      `- Write one short, natural Japanese story of 10–15 sentences.`,
+      `- Write one short, natural Japanese story of 8–10 sentences.`,
       `- Make it easy to read and easy to understand.`,
       `- Prioritise naturalness and flow over vocabulary coverage.`,
       ``,
@@ -400,19 +400,19 @@ app.get("/api/dict", (req, res) => {
 });
 
 app.post("/api/explain", async (req, res) => {
-  const { text, sentence } = req.body;
+  const { text, story } = req.body;
   if (!text) return res.status(400).json({ error: "text required" });
 
   try {
     const explanation = await enhanceAdapter.generate(
       "You are a Japanese grammar tutor helping a WaniKani learner read a story. " +
-      "The learner has highlighted a word or phrase. Explain in 1-2 sentences how it works in THIS specific sentence. " +
-      "Ground your explanation in the actual content of the sentence — name the real subject, object, or situation rather than speaking abstractly about 'the action' or 'the verb'. " +
-      "Do NOT give a generic grammar explanation that could apply to any sentence. " +
-      "Do NOT restate the dictionary meaning or give the reading. " +
-      "Start directly with the grammatical function as it plays out in this sentence. " +
-      "Plain English. No intro phrases.",
-      `Sentence: ${sentence}\nHighlighted: ${text}`,
+      "The full story is provided for context. The specific word or phrase the learner is asking about is marked with << >> delimiters. " +
+      "Explain in 1-2 sentences how the marked word/phrase functions grammatically in its immediate clause. " +
+      "Ground your explanation in the actual content \u2014 name the real subject, object, or situation rather than speaking abstractly. " +
+      "If the word appears to be used in an unusual or unexpected way given the story context, note that briefly. " +
+      "Do NOT summarise the story. Do NOT restate the dictionary meaning or give the reading. " +
+      "Start directly with the grammatical function. Plain English. No intro phrases.",
+      `Story:\n${story}\n\nHighlighted: ${text}`,
       { thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 200 }
     );
     res.json({ explanation: explanation.trim() });

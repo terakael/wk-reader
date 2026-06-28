@@ -1033,21 +1033,23 @@ function getSelectionInStory() {
   return { text, range };
 }
 
-function getSentenceContaining(range) {
-  // Compute the character offset of the selection start within the story
-  // output by measuring the text before it. This handles repeated characters
-  // (like の、は、が) correctly, unlike indexOf on storyRaw.
-  const preRange = document.createRange();
-  preRange.setStart(storyOutput, 0);
-  preRange.setEnd(range.startContainer, range.startOffset);
-  const offset = preRange.toString().length;
-
+function getMarkedStory(range) {
+  // Insert 【 】 around the highlighted span using character offsets so the
+  // LLM knows exactly which occurrence of the word is being asked about,
+  // even if it appears multiple times in the story.
   const fullText = storyOutput.textContent;
-  let start = offset;
-  while (start > 0 && !/[。！？\n]/.test(fullText[start - 1])) start--;
-  let end = offset;
-  while (end < fullText.length && !/[。！？\n]/.test(fullText[end])) end++;
-  return fullText.slice(start, end + 1).trim();
+
+  const preStart = document.createRange();
+  preStart.setStart(storyOutput, 0);
+  preStart.setEnd(range.startContainer, range.startOffset);
+  const startOffset = preStart.toString().length;
+
+  const preEnd = document.createRange();
+  preEnd.setStart(storyOutput, 0);
+  preEnd.setEnd(range.endContainer, range.endOffset);
+  const endOffset = preEnd.toString().length;
+
+  return fullText.slice(0, startOffset) + '<<' + fullText.slice(startOffset, endOffset) + '>>' + fullText.slice(endOffset);
 }
 
 function onPointerUp() {
@@ -1077,7 +1079,7 @@ explainBtn.addEventListener("click", async (e) => {
   if (!hit) return;
 
   const { text, range } = hit;
-  const sentence = getSentenceContaining(range);
+  const markedStory = getMarkedStory(range);
   const rect = range.getBoundingClientRect();
 
   popup.style.maxWidth = "340px";
@@ -1093,7 +1095,7 @@ explainBtn.addEventListener("click", async (e) => {
     const res  = await fetch("/api/explain", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, sentence }),
+      body: JSON.stringify({ text, story: markedStory }),
     });
     const data = await res.json();
     popup.innerHTML = `
