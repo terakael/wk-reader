@@ -114,7 +114,7 @@ def compute_comfort(factor: int, lapses: int, total_reviews: int, again_count: i
     return round(ease * (1.0 - lapse_penalty) * (1.0 - again_penalty), 4)
 
 
-def extract_comfort_map(col_path: str) -> dict[str, float]:
+def extract_comfort_map(col_path: str) -> dict[str, dict]:
     from anki.collection import Collection
 
     col = Collection(col_path)
@@ -124,14 +124,15 @@ def extract_comfort_map(col_path: str) -> dict[str, float]:
         col.close()
 
     # word → min comfort (multiple card types per word — use the weaker direction)
-    scores: dict[str, float] = {}
+    scores: dict[str, dict] = {}
     for flds, tags, factor, lapses, card_type, total_reviews, again_count in rows:
         word = extract_word(flds)
         if not word:
             continue
         comfort = compute_comfort(factor, lapses, total_reviews, again_count)
-        if word not in scores or comfort < scores[word]:
-            scores[word] = comfort
+        entry = {"comfort": comfort, "reviews": int(total_reviews)}
+        if word not in scores or comfort < scores[word]["comfort"]:
+            scores[word] = entry
 
     return scores
 
@@ -237,11 +238,12 @@ def main() -> None:
     if args.with_metadata:
         meta = extract_metadata(col_path)
         output = {
-            word: {"comfort": score, **meta.get(word, {})}
-            for word, score in scores.items()
+            word: {**entry, **meta.get(word, {})}
+            for word, entry in scores.items()
         }
     else:
-        output = scores
+        # Backward-compatible scalar output
+        output = {word: entry["comfort"] for word, entry in scores.items()}
 
     out_path = pathlib.Path(args.out)
     out_path.write_text(json.dumps(output, ensure_ascii=False, indent=2))

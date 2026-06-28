@@ -19,6 +19,10 @@ vocab_levels/
 # macOS
 .DS_Store
 
+# Dictionary build artifacts — regenerate with: node scripts/build_dict.js
+jmdict-eng-*.json
+dict.sqlite
+
 # Logs
 *.log
 npm-debug.log*

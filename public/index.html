@@ -603,7 +603,6 @@
 // ── State ────────────────────────────────────────────────────────────────────
 let vocabMap       = {};   // char → item  (within selected level)
 let allVocabMap    = {};   // char → item  (all 60 levels)
-let readingMap     = {};   // hiragana reading → item (all levels, for mixed kana fallback)
 let allKanjiCharMap = {};  // single kanji character → kanji item (all 60 levels)
 let dataLevel   = 0;
 let currentLevel = 5;
@@ -671,7 +670,6 @@ async function ensureData(level) {
 
   vocabMap = {};
   allVocabMap = {};
-  readingMap = {};
   allKanjiCharMap = {};
 
   vocab.sort((a, b) => b.character.length - a.character.length);
@@ -680,10 +678,6 @@ async function ensureData(level) {
   allVocab.sort((a, b) => b.character.length - a.character.length);
   for (const item of allVocab) {
     allVocabMap[item.character] = item;
-    if (item.reading) {
-      const hira = katakanaToHiragana(item.reading);
-      if (!readingMap[hira]) readingMap[hira] = item; // first (lowest level) wins
-    }
   }
 
   for (const item of allKanji) {
@@ -756,12 +750,9 @@ function annotateTokens(tokens) {
     // 2. Surface lookup (handles cases where surface === WK character but dict differs)
     if (!item) item = vocabMap[surface] || allVocabMap[surface];
 
-    // 3. Reading fallback (catches mixed kana like 気もち → 気持ち)
-    //    Gated on isKanjiStr to prevent pure-kana grammar tokens from false-matching.
-    if (!item && reading && isKanjiStr(surface)) {
-      const hira = katakanaToHiragana(reading);
-      item = readingMap[hira];
-    }
+    // 3. Reading fallback removed — dict-form lookup already handles mixed-kana
+    //    surfaces (kuromoji normalises them), and a reading-only match risks
+    //    collisions between homophones (e.g. 意外 vs 以外).
 
     if (item) {
       html += `<span class="${spanClass(item)}" data-char="${esc(item.character)}" data-surface="${esc(surface)}">${esc(surface)}</span>`;
@@ -771,24 +762,10 @@ function annotateTokens(tokens) {
         // and flag for lazy Jisho lookup on click.
         html += `<span class="wk-unknown" data-char="${esc(dict)}" data-surface="${esc(surface)}" data-reading="${esc(katakanaToHiragana(reading))}" data-jisho="true">${esc(surface)}</span>`;
       } else {
-        // Mixed kanji+kana compound (e.g. 動き出す) — annotate each kanji
-        // individually so the learner can see which components they know.
-        let inner = "";
-        for (const ch of surface) {
-          const cp = ch.codePointAt(0);
-          if (cp >= 0x4e00 && cp <= 0x9fff) {
-            const ki = allKanjiCharMap[ch];
-            if (ki) {
-              const cls = ki.level <= currentLevel ? "wk-known" : "wk-above";
-              inner += `<span class="${cls}" data-char="${esc(ch)}" data-kanji="true" data-surface="${esc(ch)}">${esc(ch)}</span>`;
-            } else {
-              inner += `<span class="wk-unknown">${esc(ch)}</span>`;
-            }
-          } else {
-            inner += esc(ch);
-          }
-        }
-        html += inner;
+        // Mixed kanji+kana compound (e.g. 見回す, 動き出す) — not in WaniKani.
+        // Speculatively emit as a single unit; resolveJishoSpans() will later
+        // expand to individual kanji if Jisho doesn't recognise the dict form.
+        html += `<span class="wk-unknown" data-char="${esc(dict)}" data-surface="${esc(surface)}" data-reading="${esc(katakanaToHiragana(reading))}" data-jisho="pending">${esc(surface)}</span>`;
       }
     } else {
       html += esc(surface);
@@ -886,6 +863,7 @@ async function runGenerate(prompt, isMore = false) {
           if (streamNode) streamNode.replaceWith(span);
           else statusNode.replaceWith(span);
           attachPopupListeners(span);
+          resolveJishoSpans(span); // async — expands pending spans in place
           storyActions.classList.add("visible");
           storyWrap.scrollTop = storyWrap.scrollHeight;
         } else if (payload.type === "error") {
@@ -923,9 +901,61 @@ function setError(msg) {
   errorMsg.classList.toggle("visible", !!msg);
 }
 
+// ── Jisho pending-span resolution ───────────────────────────────────────────
+// Called after annotateTokens(). For every span with data-jisho="pending"
+// (mixed kanji+kana not in WaniKani), looks up the dict form in Jisho:
+//   • found  → mark data-jisho="true"; popup listener is already attached
+//   • not found → replace with per-character kanji breakdown
+async function resolveJishoSpans(root) {
+  const pending = [...root.querySelectorAll('[data-jisho="pending"]')];
+  if (!pending.length) return;
+
+  await Promise.all(pending.map(async el => {
+    const word    = el.dataset.char;    // dict form (e.g. 見回す)
+    const surface = el.dataset.surface; // inflected surface (e.g. 見回し)
+
+    let data = dictCache.get(word);
+    if (!data) {
+      try {
+        const res = await fetch(`/api/dict?word=${encodeURIComponent(word)}`);
+        data = await res.json();
+      } catch (_) {
+        data = { found: false };
+      }
+      dictCache.set(word, data);
+    }
+
+    if (data.found) {
+      el.dataset.jisho = "true";
+      // mouseup listener from attachPopupListeners is already wired up
+    } else {
+      // Expand to individual kanji — same logic as the sync path
+      let innerHtml = "";
+      for (const ch of surface) {
+        const cp = ch.codePointAt(0);
+        if (cp >= 0x4e00 && cp <= 0x9fff) {
+          const ki = allKanjiCharMap[ch];
+          if (ki) {
+            const cls = ki.level <= currentLevel ? "wk-known" : "wk-above";
+            innerHtml += `<span class="${cls}" data-char="${esc(ch)}" data-kanji="true" data-surface="${esc(ch)}">${esc(ch)}</span>`;
+          } else {
+            innerHtml += `<span class="wk-unknown" data-char="${esc(ch)}">${esc(ch)}</span>`;
+          }
+        } else {
+          innerHtml += esc(ch);
+        }
+      }
+      const tmp = document.createElement("span");
+      tmp.innerHTML = innerHtml;
+      attachPopupListeners(tmp);
+      el.replaceWith(...tmp.childNodes);
+    }
+  }));
+}
+
 // ── Jisho popup ──────────────────────────────────────────────────────────────
 
-const jishoCache = new Map();
+const dictCache = new Map();
 
 async function showJishoPopup(word, reading, event) {
   popup.style.maxWidth = "";
@@ -957,16 +987,16 @@ async function showJishoPopup(word, reading, event) {
   `;
   positionPopup(event);
 
-  // Fetch Jisho data (or use cache)
-  let data = jishoCache.get(word);
+  // Fetch from local dict (or use cache)
+  let data = dictCache.get(word);
   if (!data) {
     try {
-      const res = await fetch(`/api/jisho?word=${encodeURIComponent(word)}`);
+      const res = await fetch(`/api/dict?word=${encodeURIComponent(word)}`);
       data = await res.json();
     } catch (_) {
       data = { found: false };
     }
-    jishoCache.set(word, data);
+    dictCache.set(word, data);
   }
 
   const meaningsHtml = data.found
