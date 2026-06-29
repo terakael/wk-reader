@@ -863,7 +863,7 @@ async function runGenerate(prompt, isMore = false) {
           if (streamNode) streamNode.replaceWith(span);
           else statusNode.replaceWith(span);
           attachPopupListeners(span);
-          resolveJishoSpans(span); // async — expands pending spans in place
+          resolveJishoSpans(span);
           storyActions.classList.add("visible");
           storyWrap.scrollTop = storyWrap.scrollHeight;
         } else if (payload.type === "error") {
