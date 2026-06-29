@@ -306,35 +306,17 @@
     .error-msg.visible { display: block; }
 
     /* ── Annotated spans ── */
-    .wk-known {
+    .wk-known, .wk-above, .wk-unknown {
       cursor: pointer;
-      border-bottom: 2px solid var(--hl-known-line);
-      background: var(--hl-known);
       border-radius: 3px;
       padding: 0 1px;
       transition: background 0.12s;
     }
-    .wk-known:hover,  .wk-known:active  { background: var(--hl-known-hover); }
-    .wk-above:hover,  .wk-above:active  { background: var(--hl-above-hover); }
+    .wk-known:hover,   .wk-known:active   { background: var(--hl-known-hover);   border-bottom: 2px solid var(--hl-known-line); }
+    .wk-above   { border-bottom: 2px solid var(--hl-above-line); }
+    .wk-above:hover,   .wk-above:active   { background: var(--hl-above-hover); }
+    .wk-unknown { border-bottom: 2px solid var(--hl-unknown-line); }
     .wk-unknown:hover, .wk-unknown:active { background: var(--hl-unknown-hover); }
-
-    .wk-above {
-      cursor: pointer;
-      border-bottom: 2px solid var(--hl-above-line);
-      background: var(--hl-above);
-      border-radius: 3px;
-      padding: 0 1px;
-      transition: background 0.12s;
-    }
-
-    .wk-unknown {
-      cursor: pointer;
-      border-bottom: 2px solid var(--hl-unknown-line);
-      background: var(--hl-unknown);
-      border-radius: 3px;
-      padding: 0 1px;
-      transition: background 0.12s;
-    }
 
     /* ── Popup ── */
     #popup {
@@ -757,7 +739,17 @@ function annotateTokens(tokens) {
     if (item) {
       html += `<span class="${spanClass(item)}" data-char="${esc(item.character)}" data-surface="${esc(surface)}">${esc(surface)}</span>`;
     } else if (isKanjiStr(surface)) {
-      if (isAllKanji(surface)) {
+      if (surface.length === 1) {
+        // Single kanji — check allKanjiCharMap (vocab map misses WK kanji items).
+        const ki = allKanjiCharMap[surface];
+        if (ki) {
+          const cls = ki.level <= currentLevel ? "wk-known" : "wk-above";
+          html += `<span class="${cls}" data-char="${esc(surface)}" data-kanji="true" data-surface="${esc(surface)}">${esc(surface)}</span>`;
+        } else {
+          // Single kanji not in WaniKani at all — lazy Jisho lookup.
+          html += `<span class="wk-unknown" data-char="${esc(dict)}" data-surface="${esc(surface)}" data-reading="${esc(katakanaToHiragana(reading))}" data-jisho="true">${esc(surface)}</span>`;
+        }
+      } else if (isAllKanji(surface)) {
         // All-kanji compound not in WaniKani (e.g. 発明) — keep as a unit
         // and flag for lazy Jisho lookup on click.
         html += `<span class="wk-unknown" data-char="${esc(dict)}" data-surface="${esc(surface)}" data-reading="${esc(katakanaToHiragana(reading))}" data-jisho="true">${esc(surface)}</span>`;
